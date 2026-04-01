@@ -1,25 +1,22 @@
-# Use official Python 3.11 slim image (small and fast)
 FROM python:3.11-slim
 
-# Set the working directory inside the container
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-# Copy dependency list first
-# (Docker caches this layer — if requirements.txt unchanged, pip install is skipped)
-COPY requirements.txt ./requirements.txt
+# Copy dependency files first (cached layer)
+COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies (no cache to keep image small)
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies using uv
+RUN uv sync --frozen --no-dev
 
-# Copy all project files into /app
+# Copy all project files
 COPY . .
 
-# Set Python path so imports like "from models import ..." work from /app
 ENV PYTHONPATH=/app
 
-# Port HuggingFace Spaces expects (REQUIRED — do not change)
 EXPOSE 7860
 
-# Start the FastAPI server
-# "server.app:app" means: the `app` variable in `server/app.py`
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+# Start server via uv — exactly as judges will test
+CMD ["uv", "run", "server"]
