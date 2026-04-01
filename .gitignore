@@ -21,4 +21,10 @@ logs/
 .DS_Store
 
 # Test files
-test_graders.py
+test_graders.py.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/

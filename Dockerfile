@@ -5,18 +5,21 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy dependency files first (cached layer)
+# Copy dependency files first
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-dev
+# Remove any existing venv and create fresh one
+RUN rm -rf .venv && \
+    uv venv --python python3.11 && \
+    uv sync --frozen --no-dev
 
 # Copy all project files
 COPY . .
 
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app
 
 EXPOSE 7860
 
-# Start server via uv — exactly as judges will test
 CMD ["uv", "run", "server"]

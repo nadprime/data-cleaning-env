@@ -65,12 +65,22 @@ ignore_patterns = [
     ".git",
     ".gitignore",
     "venv",
-    ".venv",
+    ".venv",           # ← virtual environment — never upload
+    ".venv/*",
     "outputs",
     "logs",
     "*.log",
-    "deploy_to_hf.py",  # no need to upload the deploy script itself
+    "deploy_to_hf.py",
     ".env",
+    ".env.*",
+    "secrets.*",
+    "test_*.py",
+    "*.egg-info",
+    "*.egg-info/*",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".ruff_cache",
 ]
 
 try:
