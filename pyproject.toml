@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "data-cleaning-env"
+version = "1.0.0"
+description = "OpenEnv data cleaning agent environment"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.9.0",
+    "openai>=1.0.0",
+    "requests>=2.31.0",
+    "huggingface-hub>=0.25.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

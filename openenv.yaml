@@ -1,0 +1,78 @@
+name: data-cleaning-env
+version: "1.0.0"
+description: >
+  An OpenEnv environment where AI agents learn to clean messy tabular datasets.
+  Simulates a real data engineering task: normalizing column names, handling
+  missing values, removing duplicates, type casting, and outlier capping.
+author: maintainer
+tags:
+  - openenv
+  - data-cleaning
+  - data-quality
+  - tabular-data
+  - real-world
+tasks:
+  - id: 1
+    name: column-cleaner
+    difficulty: easy
+    description: >
+      Fix malformed column names — convert to lowercase, replace spaces with
+      underscores, strip leading/trailing whitespace.
+  - id: 2
+    name: data-sanitizer
+    difficulty: medium
+    description: >
+      Handle missing values (fill nulls with medians/defaults),
+      remove exact duplicate rows, fill blank strings.
+  - id: 3
+    name: data-reconstructor
+    difficulty: hard
+    description: >
+      Full data reconstruction: type casting (strings to float/int/bool),
+      outlier detection and capping, category normalization and typo fixing.
+action_space:
+  type: object
+  description: Agent submits a cleaned version of the dataset
+  fields:
+    task_id:
+      type: integer
+      range: [1, 3]
+    cleaned_data:
+      type: array of objects
+      description: List of cleaned row dicts
+    metadata:
+      type: object
+      description: Optional additional info
+observation_space:
+  type: object
+  description: Environment returns dirty data + grader feedback
+  fields:
+    task_description:
+      type: string
+    dirty_data:
+      type: array of objects
+    schema_hint:
+      type: object
+    feedback:
+      type: string
+    score_breakdown:
+      type: object
+    reward:
+      type: float
+    done:
+      type: boolean
+reward:
+  type: float
+  range: [0.0, 1.0]
+  description: >
+    raw_score + 0.1*(improvement_bonus) - 0.05*(step_count - 1), clamped to [0, 1].
+    Provides dense partial-progress signal — grader scores improve incrementally.
+episode:
+  max_steps: 5
+  termination: perfect score (>=0.99) OR max steps reached
+endpoints:
+  health: GET /health
+  reset: POST /reset?task_id={1,2,3}
+  step: POST /step
+  state: GET /state
+  docs: GET /docs

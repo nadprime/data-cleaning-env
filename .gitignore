@@ -1,0 +1,24 @@
+# Secrets — never commit these
+.env
+.env.*
+*.env
+secrets.yaml
+secrets.json
+*_secret*
+*_token*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime artifacts
+venv/
+.venv/
+outputs/
+logs/
+*.log
+.DS_Store
+
+# Test files
+test_graders.py
