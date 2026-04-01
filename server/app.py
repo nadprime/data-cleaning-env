@@ -118,3 +118,26 @@ def get_state() -> Dict[str, Any]:
     Safe to call before reset() — returns default values if no episode is active.
     """
     return env.state().model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point — required by OpenEnv validator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    """
+    Server entry point.
+    Called by: [project.scripts] server = "server.app:main"
+    Also called directly when running: python server/app.py
+    """
+    import uvicorn
+    uvicorn.run(
+        "server.app:app",
+        host="0.0.0.0",
+        port=7860,
+        workers=1,
+    )
+
+
+if __name__ == "__main__":
+    main()
