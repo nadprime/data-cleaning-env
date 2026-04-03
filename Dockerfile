@@ -19,6 +19,7 @@ COPY . .
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app
+ENV ENABLE_WEB_INTERFACE=true
 
 EXPOSE 7860
 

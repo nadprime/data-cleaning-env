@@ -318,6 +318,77 @@ def get_metadata() -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Web UI — mount Gradio at /web if ENABLE_WEB_INTERFACE=true
+# ─────────────────────────────────────────────────────────────────────────────
+
+import os as _os
+
+if _os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in ("true", "1", "yes"):
+    try:
+        import gradio as gr
+        from openenv.core.env_server.gradio_ui import build_gradio_app
+        from openenv.core.env_server.web_interface import (
+            WebInterfaceManager,
+            load_environment_metadata,
+            _extract_action_fields,
+            _is_chat_env,
+            get_quick_start_markdown,
+        )
+        from openenv.core.env_server.gradio_theme import (
+            OPENENV_GRADIO_CSS,
+            OPENENV_GRADIO_THEME,
+        )
+        from models import DataCleaningAction, DataCleaningObservation
+
+        # Load metadata from README
+        _metadata = load_environment_metadata(env, env_name="data-cleaning-env")
+
+        # Create web manager using the same global env instance
+        _web_manager = WebInterfaceManager(
+            env,
+            DataCleaningAction,
+            DataCleaningObservation,
+            _metadata,
+        )
+
+        # Build Gradio blocks
+        _action_fields = _extract_action_fields(DataCleaningAction)
+        _is_chat = _is_chat_env(DataCleaningAction)
+        _quick_start = get_quick_start_markdown(
+            _metadata, DataCleaningAction, DataCleaningObservation
+        )
+
+        _gradio_blocks = build_gradio_app(
+            _web_manager,
+            _action_fields,
+            _metadata,
+            _is_chat,
+            title="Data Cleaning Agent Environment",
+            quick_start_md=_quick_start,
+        )
+
+        # Mount at /web — does not affect any existing endpoints
+        app = gr.mount_gradio_app(
+            app,
+            _gradio_blocks,
+            path="/web",
+            theme=OPENENV_GRADIO_THEME,
+            css=OPENENV_GRADIO_CSS,
+        )
+
+        # Redirect root to web UI
+        from fastapi.responses import RedirectResponse as _RedirectResponse
+
+        @app.get("/", include_in_schema=False)
+        async def _root_redirect():
+            return _RedirectResponse(url="/web/")
+
+    except Exception as _e:
+        print(f"[WARNING] Web UI could not be mounted: {_e}")
+        print("[WARNING] Server will continue without web UI.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Entry point — required by OpenEnv validator
 # ─────────────────────────────────────────────────────────────────────────────
 
