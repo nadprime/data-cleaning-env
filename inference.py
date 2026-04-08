@@ -403,4 +403,12 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nInterrupted by user", flush=True)
+    except Exception as e:
+        print(f"[FATAL] Unhandled exception in main: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
