@@ -1,7 +1,7 @@
 """
 inference.py
 ============
-Baseline inference script for the Data Cleaning Agent Environment.
+FIXED Baseline inference script for the Data Cleaning Agent Environment.
 
 MANDATORY environment variables:
     API_BASE_URL   The API endpoint for the LLM.
@@ -30,20 +30,22 @@ import json
 import os
 import sys
 import textwrap
+import traceback
 from typing import Any, Dict, List, Optional
 
 import requests
 from openai import OpenAI
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 # Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 
 API_BASE_URL: str = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME: str = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.3-70B-Instruct"
 API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
 ENV_BASE_URL: str = os.getenv("ENV_BASE_URL", "http://localhost:7860")
 
+# Validate mandatory environment variables
 if not API_KEY:
     print("[ERROR] No API key found. Set HF_TOKEN or API_KEY environment variable.", flush=True)
     print("  export HF_TOKEN='hf_...'", flush=True)
@@ -63,9 +65,10 @@ TASK_NAMES: Dict[int, str] = {
     3: "data-reconstructor",
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 # Mandatory stdout logging functions
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
+
 
 def log_start(task: str, env: str, model: str) -> None:
     """Emit [START] line — one per episode."""
@@ -104,11 +107,12 @@ def log_end(
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────���─────────────────────────────────────────────────────────────
 # System prompt
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT: str = textwrap.dedent("""
+SYSTEM_PROMPT: str = textwrap.dedent(
+    """
 You are an expert data cleaning engineer.
 
 You will receive:
@@ -136,52 +140,151 @@ Example of correct output format:
 ]
 
 Start your response with [ and end with ]. Nothing before or after.
-""").strip()
+"""
+).strip()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Environment HTTP helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
+# Environment HTTP helpers with ROBUST ERROR HANDLING
+# ────────────────────────────────────────────────────────────────────
+
 
 def env_health_check() -> bool:
-    """Returns True if the environment server is reachable and healthy."""
+    """
+    Returns True if the environment server is reachable and healthy.
+    
+    Handles all network exceptions gracefully.
+    """
     try:
         resp = requests.get(f"{ENV_BASE_URL}/health", timeout=10)
-        return resp.status_code == 200
-    except requests.RequestException:
+        is_healthy = resp.status_code == 200
+        if is_healthy:
+            print(f"[DEBUG] Health check passed: {ENV_BASE_URL}/health", flush=True)
+        else:
+            print(
+                f"[DEBUG] Health check failed with status {resp.status_code}",
+                flush=True,
+            )
+        return is_healthy
+    except requests.Timeout:
+        print(
+            f"[DEBUG] Health check timeout: {ENV_BASE_URL} took too long to respond",
+            flush=True,
+        )
+        return False
+    except requests.ConnectionError as e:
+        print(
+            f"[DEBUG] Cannot connect to {ENV_BASE_URL}: {e}",
+            flush=True,
+        )
+        return False
+    except requests.RequestException as e:
+        print(
+            f"[DEBUG] Health check request failed: {e}",
+            flush=True,
+        )
+        return False
+    except Exception as e:
+        print(f"[DEBUG] Unexpected error in health check: {e}", flush=True)
         return False
 
 
 def env_reset(task_id: int) -> Dict[str, Any]:
-    """Call POST /reset on the environment."""
-    resp = requests.post(
-        f"{ENV_BASE_URL}/reset",
-        params={"task_id": task_id},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """
+    Call POST /reset on the environment.
+    
+    Raises exception with detailed error message on failure.
+    """
+    try:
+        print(f"[DEBUG] Resetting environment for task_id={task_id}", flush=True)
+        resp = requests.post(
+            f"{ENV_BASE_URL}/reset",
+            params={"task_id": task_id},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        print(
+            f"[DEBUG] Reset successful. Got observation with keys: {list(result.get('observation', {}).keys())}",
+            flush=True,
+        )
+        return result
+    except requests.Timeout:
+        error_msg = f"env_reset timeout: No response from {ENV_BASE_URL} within 30 seconds"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except requests.ConnectionError as e:
+        error_msg = f"env_reset connection error: Cannot reach {ENV_BASE_URL}: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except requests.HTTPError as e:
+        error_msg = f"env_reset HTTP error: {e.response.status_code} - {e.response.text}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except json.JSONDecodeError as e:
+        error_msg = f"env_reset JSON decode error: Server returned non-JSON: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except Exception as e:
+        error_msg = f"env_reset unexpected error: {type(e).__name__}: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
 
 
 def env_step(task_id: int, cleaned_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Call POST /step with the agent's cleaned dataset."""
-    payload = {
-        "task_id": task_id,
-        "cleaned_data": cleaned_data,
-        "metadata": {},
-    }
-    resp = requests.post(
-        f"{ENV_BASE_URL}/step",
-        json=payload,
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """
+    Call POST /step with the agent's cleaned dataset.
+    
+    Raises exception with detailed error message on failure.
+    """
+    try:
+        payload = {
+            "task_id": task_id,
+            "cleaned_data": cleaned_data,
+            "metadata": {},
+        }
+        print(
+            f"[DEBUG] Submitting step for task_id={task_id} with {len(cleaned_data)} rows",
+            flush=True,
+        )
+        resp = requests.post(
+            f"{ENV_BASE_URL}/step",
+            json=payload,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        print(
+            f"[DEBUG] Step successful. Reward: {result.get('reward')}, Done: {result.get('done')}",
+            flush=True,
+        )
+        return result
+    except requests.Timeout:
+        error_msg = f"env_step timeout: No response from {ENV_BASE_URL} within 60 seconds"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except requests.ConnectionError as e:
+        error_msg = f"env_step connection error: Cannot reach {ENV_BASE_URL}: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except requests.HTTPError as e:
+        error_msg = f"env_step HTTP error: {e.response.status_code} - {e.response.text}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except json.JSONDecodeError as e:
+        error_msg = f"env_step JSON decode error: Server returned non-JSON: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
+    except Exception as e:
+        error_msg = f"env_step unexpected error: {type(e).__name__}: {e}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        raise RuntimeError(error_msg)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM agent
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
+# LLM agent with ROBUST ERROR HANDLING
+# ────────────────────────────────────────────────────────────────────
+
 
 def call_llm(
     client: OpenAI,
@@ -189,23 +292,29 @@ def call_llm(
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Ask the LLM to produce a cleaned version of the dirty dataset.
+    
     Returns parsed list of row dicts, or None if response could not be parsed.
+    Handles all exceptions gracefully with detailed logging.
     """
-    user_message = (
-        f"TASK DESCRIPTION:\n{observation['task_description']}\n\n"
-        f"EXPECTED SCHEMA (use these exact column names and types):\n"
-        f"{json.dumps(observation['schema_hint'], indent=2)}\n\n"
-        f"DIRTY DATA TO CLEAN:\n"
-        f"{json.dumps(observation['dirty_data'], indent=2)}\n\n"
-        f"PREVIOUS FEEDBACK (from your last submission):\n"
-        f"{observation.get('feedback', 'None — this is your first attempt.')}\n\n"
-        f"PREVIOUS SCORE BREAKDOWN:\n"
-        f"{json.dumps(observation.get('score_breakdown', {}), indent=2)}\n\n"
-        f"Now return the cleaned dataset as a JSON array. "
-        f"Start immediately with [ — no preamble."
-    )
-
     try:
+        user_message = (
+            f"TASK DESCRIPTION:\n{observation['task_description']}\n\n"
+            f"EXPECTED SCHEMA (use these exact column names and types):\n"
+            f"{json.dumps(observation['schema_hint'], indent=2)}\n\n"
+            f"DIRTY DATA TO CLEAN:\n"
+            f"{json.dumps(observation['dirty_data'], indent=2)}\n\n"
+            f"PREVIOUS FEEDBACK (from your last submission):\n"
+            f"{observation.get('feedback', 'None — this is your first attempt.')}\n\n"
+            f"PREVIOUS SCORE BREAKDOWN:\n"
+            f"{json.dumps(observation.get('score_breakdown', {}), indent=2)}\n\n"
+            f"Now return the cleaned dataset as a JSON array. "
+            f"Start immediately with [ — no preamble."
+        )
+
+        print(
+            "[DEBUG] Calling LLM API...",
+            flush=True,
+        )
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -217,12 +326,18 @@ def call_llm(
             stream=False,
         )
         raw = (completion.choices[0].message.content or "").strip()
+        print(f"[DEBUG] LLM response received ({len(raw)} chars)", flush=True)
+
     except Exception as exc:
-        print(f"[DEBUG] LLM API call failed: {exc}", flush=True)
+        print(
+            f"[ERROR] LLM API call failed: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
         return None
 
     # Strip markdown code fences if model added them despite instructions
     if raw.startswith("```"):
+        print("[DEBUG] Stripping markdown code fences from LLM response", flush=True)
         lines = raw.splitlines()
         start = 1
         end = len(lines) - 1
@@ -232,26 +347,41 @@ def call_llm(
     start_idx = raw.find("[")
     end_idx = raw.rfind("]")
     if start_idx == -1 or end_idx == -1:
-        print(f"[DEBUG] No JSON array found in LLM response.", flush=True)
+        print(
+            f"[ERROR] No JSON array found in LLM response. Raw (first 200 chars): {raw[:200]}",
+            flush=True,
+        )
         return None
-    raw = raw[start_idx: end_idx + 1]
+    raw = raw[start_idx : end_idx + 1]
 
     try:
         cleaned = json.loads(raw)
+        print(f"[DEBUG] JSON parsed successfully. Got {len(cleaned)} rows.", flush=True)
     except json.JSONDecodeError as exc:
-        print(f"[DEBUG] JSON parse error: {exc}", flush=True)
+        print(
+            f"[ERROR] JSON parse error: {exc}. Raw content (first 200 chars): {raw[:200]}",
+            flush=True,
+        )
         return None
 
-    if not isinstance(cleaned, list) or len(cleaned) == 0:
-        print(f"[DEBUG] LLM returned empty or non-list response.", flush=True)
+    if not isinstance(cleaned, list):
+        print(
+            f"[ERROR] LLM returned non-list response. Type: {type(cleaned)}",
+            flush=True,
+        )
+        return None
+
+    if len(cleaned) == 0:
+        print("[WARNING] LLM returned empty list.", flush=True)
         return None
 
     return cleaned
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 # Episode runner — one task
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
+
 
 async def run_episode(client: OpenAI, task_id: int) -> float:
     """
@@ -259,7 +389,15 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
 
     Emits [START], [STEP]x N, [END] in mandatory format.
     Returns best raw score achieved (0.0–1.0).
+    
+    All exceptions are caught and handled gracefully.
     """
+    # Validate task_id
+    if task_id not in TASK_NAMES:
+        error_msg = f"Invalid task_id: {task_id}. Valid tasks: {list(TASK_NAMES.keys())}"
+        print(f"[ERROR] {error_msg}", flush=True)
+        return 0.0
+
     task_name = TASK_NAMES[task_id]
     rewards: List[float] = []
     steps_taken: int = 0
@@ -271,12 +409,23 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
 
     try:
         # Reset episode
-        result = env_reset(task_id=task_id)
+        try:
+            result = env_reset(task_id=task_id)
+        except Exception as exc:
+            print(
+                f"[ERROR] Failed to reset environment: {exc}",
+                flush=True,
+            )
+            raise
+
         observation = result["observation"]
         done: bool = result.get("done", False)
 
         if done:
-            print(f"[DEBUG] Environment returned done=True on reset. Skipping.", flush=True)
+            print(
+                "[DEBUG] Environment returned done=True on reset. Skipping episode.",
+                flush=True,
+            )
             return 0.0
 
         for step in range(1, MAX_STEPS + 1):
@@ -288,6 +437,10 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
 
             if cleaned_data is None:
                 # LLM failed — submit empty list as fallback
+                print(
+                    "[WARNING] LLM returned None. Using empty list as fallback.",
+                    flush=True,
+                )
                 cleaned_data = []
                 action_str = "[]"
             else:
@@ -295,7 +448,23 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
                 action_str = json.dumps(cleaned_data, separators=(",", ":"))
 
             # Submit to environment
-            result = env_step(task_id=task_id, cleaned_data=cleaned_data)
+            try:
+                result = env_step(task_id=task_id, cleaned_data=cleaned_data)
+            except Exception as exc:
+                print(
+                    f"[ERROR] env_step failed at step {step}: {exc}",
+                    flush=True,
+                )
+                # Emit partial [STEP] with error and stop episode
+                log_step(
+                    step=step,
+                    action=action_str,
+                    reward=0.0,
+                    done=True,
+                    error=str(exc),
+                )
+                break
+
             observation = result["observation"]
             reward: float = float(result.get("reward", 0.0))
             done = result.get("done", False)
@@ -326,7 +495,11 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as exc:
-        print(f"[DEBUG] Episode error: {exc}", flush=True)
+        print(
+            f"[ERROR] Episode error: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        traceback.print_exc()
         score = min(max(best_score, 0.0), 1.0)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
@@ -342,9 +515,10 @@ async def run_episode(client: OpenAI, task_id: int) -> float:
     return best_score
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 # Main
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
+
 
 async def main() -> None:
     print("=" * 62, flush=True)
@@ -357,17 +531,36 @@ async def main() -> None:
 
     # Verify environment is running
     print("\nChecking environment health...", flush=True)
-    if not env_health_check():
-        print(f"\n[ERROR] Cannot reach environment at {ENV_BASE_URL}", flush=True)
-        print("Make sure the server is running:", flush=True)
-        print("  uv run server", flush=True)
-        print("  OR", flush=True)
-        print("  docker run -p 7860:7860 data-cleaning-env", flush=True)
-        sys.exit(1)
-    print("  Environment is healthy ✓", flush=True)
+    max_health_check_retries = 3
+    for attempt in range(1, max_health_check_retries + 1):
+        if env_health_check():
+            print("  Environment is healthy ✓", flush=True)
+            break
+        else:
+            if attempt < max_health_check_retries:
+                print(
+                    f"  Health check failed. Retrying ({attempt}/{max_health_check_retries})...",
+                    flush=True,
+                )
+                await asyncio.sleep(2)
+            else:
+                print(f"\n[FATAL] Cannot reach environment at {ENV_BASE_URL}", flush=True)
+                print("Make sure the server is running:", flush=True)
+                print("  Terminal 1: uv run server", flush=True)
+                print("  Terminal 2: python inference.py", flush=True)
+                print("\nOR with Docker:", flush=True)
+                print("  Terminal 1: docker run -p 7860:7860 data-cleaning-env", flush=True)
+                print("  Terminal 2: python inference.py", flush=True)
+                sys.exit(1)
 
-    # Create LLM client
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    # Create LLM client with error handling
+    try:
+        print("\nInitializing LLM client...", flush=True)
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        print(f"  LLM client ready (Model: {MODEL_NAME})", flush=True)
+    except Exception as e:
+        print(f"[FATAL] Failed to create LLM client: {e}", flush=True)
+        sys.exit(1)
 
     # Run all three tasks — each gets its own [START]..[END] block
     scores: Dict[int, float] = {}
@@ -388,7 +581,10 @@ async def main() -> None:
     for task_id, score in scores.items():
         bar = "█" * int(score * 20)
         spaces = " " * (20 - int(score * 20))
-        print(f"  Task {task_id} — {task_labels[task_id]}  {score:.4f}  [{bar}{spaces}]", flush=True)
+        print(
+            f"  Task {task_id} — {task_labels[task_id]}  {score:.4f}  [{bar}{spaces}]",
+            flush=True,
+        )
 
     avg = sum(scores.values()) / len(scores)
     print(f"\n  Average score : {avg:.4f}", flush=True)
@@ -396,7 +592,9 @@ async def main() -> None:
 
     # Validate all scores
     for tid, s in scores.items():
-        assert 0.0 <= s <= 1.0, f"Task {tid} score {s} is out of range [0.0, 1.0]!"
+        assert (
+            0.0 <= s <= 1.0
+        ), f"Task {tid} score {s} is out of range [0.0, 1.0]!"
 
     print("\n  All scores in valid range [0.0, 1.0] ✓", flush=True)
     print("  Ready to submit!\n", flush=True)
@@ -408,7 +606,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nInterrupted by user", flush=True)
     except Exception as e:
-        print(f"[FATAL] Unhandled exception in main: {e}", flush=True)
-        import traceback
+        print(f"[FATAL] Unhandled exception in main: {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
         sys.exit(1)
