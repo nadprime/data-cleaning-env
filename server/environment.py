@@ -191,6 +191,14 @@ def _normalize_str(v: Any) -> str:
     return str(v).strip().lower()
 
 
+def _clamp_score(score: float) -> float:
+    """
+    Clamp score to strictly open interval (0.01, 0.99).
+    Validator requires scores strictly between 0 and 1 — not 0.0 or 1.0.
+    """
+    return round(max(0.01, min(0.99, score)), 4)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Grader: Task 1
 # ─────────────────────────────────────────────────────────────────────────────
@@ -212,10 +220,10 @@ def grade_task_1(
     expected_cols = set(expected[0].keys())  # {first_name, last_name, age, email_address}
 
     if not submitted:
-        return 0.0, "No data submitted.", {"column_names": 0.0, "data_values": 0.0}
+        return 0.01, "No data submitted.", {"column_names": 0.01, "data_values": 0.01}
 
     if not isinstance(submitted[0], dict):
-        return 0.0, "Each row must be a dict.", {"column_names": 0.0, "data_values": 0.0}
+        return 0.01, "Each row must be a dict.", {"column_names": 0.01, "data_values": 0.01}
 
     submitted_cols = set(submitted[0].keys())
 
@@ -258,7 +266,7 @@ def grade_task_1(
         "column_names": round(col_score, 4),
         "data_values": round(val_score, 4),
     }
-    return total, " | ".join(parts), breakdown
+    return _clamp_score(total), " | ".join(parts), breakdown
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,7 +289,7 @@ def grade_task_2(
     expected = TASK_2_CLEAN
 
     if not submitted:
-        return 0.0, "No data submitted.", {"row_count": 0.0, "cell_accuracy": 0.0}
+        return 0.01, "No data submitted.", {"row_count": 0.01, "cell_accuracy": 0.01}
 
     # Score 1: row count
     # Perfect = 6 rows. Penalty 0.2 per row off, minimum 0.
@@ -317,7 +325,7 @@ def grade_task_2(
         "row_count": round(row_score, 4),
         "cell_accuracy": round(cell_score, 4),
     }
-    return total, feedback, breakdown
+    return _clamp_score(total), feedback, breakdown
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -373,7 +381,7 @@ def grade_task_3(
 
     if not submitted or len(submitted) < n:
         msg = f"Expected {n} rows, got {len(submitted)}."
-        return 0.0, msg, {k: 0.0 for k in weights}
+        return 0.01, msg, {k: 0.01 for k in weights}
 
     col_scores: Dict[str, float] = {}
 
@@ -423,7 +431,7 @@ def grade_task_3(
         parts.append(f"{col}={score:.0%}{status}")
 
     breakdown = {k: round(v, 4) for k, v in col_scores.items()}
-    return total, " | ".join(parts), breakdown
+    return _clamp_score(total), " | ".join(parts), breakdown
 
 
 # ─────────────────────────────────────────────────────────────────────────────

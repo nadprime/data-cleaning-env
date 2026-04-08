@@ -111,7 +111,10 @@ reward = raw_score
 | `raw_score` | Dense partial progress signal — every improvement is rewarded |
 | `improvement_bonus` | Encourages the agent to keep trying when it is making progress |
 | `step_penalty` | Rewards efficiency — a perfect first attempt scores higher than a perfect fifth |
-| `clamped` | Reward never goes negative — agent always has incentive to improve |
+| `clamped` | Reward is clamped to `[0.0, 1.0]` — agent always has incentive to improve |
+
+Grader raw scores are additionally clamped to the strict interval `(0.01, 0.99)`
+to satisfy validator requirements that scores stay strictly between 0 and 1.
 
 ---
 
@@ -199,14 +202,21 @@ Episodes end when:
 | `/reset` | POST | Start a new episode → `?task_id=1` |
 | `/step` | POST | Submit cleaned data, receive reward |
 | `/state` | GET | Episode metadata |
+| `/schema` | GET | JSON schemas for action/observation/state (validator-required) |
+| `/metadata` | GET | Environment metadata (validator-required) |
+| `/openapi.json` | GET | OpenAPI spec (validator-required) |
 | `/docs` | GET | Interactive API documentation |
+| `/redoc` | GET | ReDoc API documentation |
 
 ---
 
 ## Grader Design
 
-Each task has a deterministic programmatic grader that produces scores between 0.0 and 1.0.
+Each task has a deterministic programmatic grader that produces scores strictly between 0 and 1.
 The same input always produces the same score — no randomness.
+
+Note: exact boundary values `0.0` and `1.0` are intentionally avoided; scores are
+clamped into `(0.01, 0.99)`.
 
 ### Task 1 Grader
 
@@ -320,6 +330,7 @@ data-cleaning-env/
 ├── inference.py            ← LLM agent baseline script
 ├── run_server.py           ← Server entry point for uv
 ├── deploy_to_hf.py         ← HuggingFace deployment helper
+├── uv.lock                 ← Resolved dependency lockfile
 ├── tests/
 │   ├── __init__.py
 │   └── test_environment.py ← Full test suite
