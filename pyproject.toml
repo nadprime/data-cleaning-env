@@ -17,6 +17,7 @@ dependencies = [
     "huggingface-hub>=0.25.0",
     "openenv-core>=0.2.0",
     "python-multipart>=0.0.22",
+    "gradio>=4.0.0",
 ]
 
 [project.scripts]
